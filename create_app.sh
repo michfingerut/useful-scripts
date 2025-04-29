@@ -208,12 +208,12 @@ EOL
 cat > README.md << EOL
 # $APP_NAME
 
-A full-stack application with Node.js backend and Vite frontend.
+A full-stack application with Node.js backend (ES6 modules) and Vite frontend.
 
 ## Structure
 
 - \`/client\`: Frontend application built with Vite
-- \`/server\`: Backend API built with Express.js
+- \`/server\`: Backend API built with Express.js using ES6 modules
 - \`/scripts\`: Utility scripts for running and managing the app
 - Database: $DB_TYPE
 
@@ -302,6 +302,7 @@ services:
     volumes:
       - ./server:/app
       - /app/node_modules
+      - ./server:/app
     environment:
       - NODE_ENV=\${NODE_ENV:-development}
       - PORT=\${SERVER_PORT}
@@ -350,17 +351,18 @@ fi
 
 # Set up server
 
-# Create package.json for server
+# Create package.json for server with ES6 modules support
 cat > server/package.json << EOL
 {
   "name": "${APP_NAME}-server",
   "version": "1.0.0",
   "description": "Backend server for ${APP_NAME}",
+  "type": "module",
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "NODE_ENV=test node --experimental-vm-modules --expose-gc ./node_modules/.bin/jest --logHeapUsage --detectOpenHandles --config ./tests/jest.config.js --runInBand",
   },
   "keywords": [],
   "author": "",
@@ -411,10 +413,13 @@ EXPOSE \${SERVER_PORT}
 CMD ["npm", "run", "dev"]
 EOL
 
-# Create server index.js
+# Create server index.js with ES6 syntax
 cat > server/src/index.js << EOL
-require('dotenv').config();
-const app = require('./app');
+import { config } from 'dotenv';
+import app from './app.js';
+
+// Load environment variables
+config();
 
 const PORT = process.env.SERVER_PORT || 8000;
 const HOST = process.env.SERVER_HOST || '0.0.0.0';
@@ -424,11 +429,16 @@ app.listen(PORT, HOST, () => {
 });
 EOL
 
-# Create app.js with proper DB configuration
+# Create app.js with proper DB configuration (ES6 syntax)
 cat > server/src/app.js << EOL
-const express = require('express');
-const cors = require('cors');
-const path = require('path');
+import express from 'express';
+import cors from 'cors';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Get directory name in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Initialize Express
 const app = express();
@@ -441,13 +451,13 @@ app.use(express.urlencoded({ extended: true }));
 // Database connection
 EOL
 
-# Add DB-specific connection code
+# Add DB-specific connection code with ES6 syntax
 if [ "$DB_TYPE" = "postgres" ]; then
   cat >> server/src/app.js << EOL
-const { Sequelize } = require('sequelize');
-const dbConfig = require('./config/db.config');
+import { Sequelize } from 'sequelize';
+import dbConfig from './config/db.config.js';
 
-const sequelize = new Sequelize(dbConfig.DB_URI, {
+export const sequelize = new Sequelize(dbConfig.DB_URI, {
   dialect: 'postgres',
   logging: false
 });
@@ -472,22 +482,19 @@ sequelize.sync({ alter: true })
   .catch(err => {
     console.error('Failed to sync database:', err);
   });
-
-// Export sequelize for use in models
-module.exports.sequelize = sequelize;
 EOL
 
-  # Create DB config for PostgreSQL
+  # Create DB config for PostgreSQL (ES6)
   cat > server/src/config/db.config.js << EOL
-module.exports = {
+export default {
   DB_URI: process.env.DB_URI || 'postgresql://postgres:postgres@localhost:5432/app_db'
 };
 EOL
 
-  # Create a basic Sequelize model
+  # Create a basic Sequelize model (ES6)
   cat > server/src/models/example.model.js << EOL
-const { DataTypes } = require('sequelize');
-const { sequelize } = require('../app');
+import { DataTypes } from 'sequelize';
+import { sequelize } from '../app.js';
 
 const Example = sequelize.define('example', {
   id: {
@@ -504,13 +511,13 @@ const Example = sequelize.define('example', {
   }
 });
 
-module.exports = Example;
+export default Example;
 EOL
 
 else
   cat >> server/src/app.js << EOL
-const mongoose = require('mongoose');
-const dbConfig = require('./config/db.config');
+import mongoose from 'mongoose';
+import dbConfig from './config/db.config.js';
 
 // Connect to MongoDB
 mongoose.connect(dbConfig.DB_URI)
@@ -523,16 +530,16 @@ mongoose.connect(dbConfig.DB_URI)
   });
 EOL
 
-  # Create DB config for MongoDB
+  # Create DB config for MongoDB (ES6)
   cat > server/src/config/db.config.js << EOL
-module.exports = {
+export default {
   DB_URI: process.env.DB_URI || 'mongodb://mongo:mongo@localhost:27017/app_db?authSource=admin'
 };
 EOL
 
-  # Create a basic Mongoose model
+  # Create a basic Mongoose model (ES6)
   cat > server/src/models/example.model.js << EOL
-const mongoose = require('mongoose');
+import mongoose from 'mongoose';
 
 const exampleSchema = new mongoose.Schema({
   name: {
@@ -548,12 +555,13 @@ const exampleSchema = new mongoose.Schema({
   }
 });
 
-module.exports = mongoose.model('Example', exampleSchema);
+const Example = mongoose.model('Example', exampleSchema);
+export default Example;
 EOL
 
 fi
 
-# Continue with the rest of app.js
+# Continue with the rest of app.js (ES6 syntax)
 cat >> server/src/app.js << EOL
 
 // Routes
@@ -562,7 +570,8 @@ app.get('/', (req, res) => {
 });
 
 // API routes
-app.use('/api', require('./routes/index'));
+import indexRouter from './routes/index.js';
+app.use('/api', indexRouter);
 
 // Handle 404
 app.use((req, res) => {
@@ -575,12 +584,12 @@ app.use((err, req, res, next) => {
   res.status(500).json({ message: 'Internal server error' });
 });
 
-module.exports = app;
+export default app;
 EOL
 
-# Create a basic route file
+# Create a basic route file (ES6)
 cat > server/src/routes/index.js << EOL
-const express = require('express');
+import express from 'express';
 const router = express.Router();
 
 // Example route
@@ -588,8 +597,173 @@ router.get('/', (req, res) => {
   res.json({ message: 'Welcome to the API' });
 });
 
-module.exports = router;
+export default router;
 EOL
+
+# We need to add these additions to the server setup section in the script
+
+# Update server directory structure to include test directory
+mkdir -p server/test/unit server/test/integration
+
+# Create nodemon.json config file to watch both src and test directories
+cat > server/nodemon.json << EOL
+{
+  "watch": ["src/**/*", "test/**/*"],
+  "ext": "js,mjs,json",
+  "ignore": ["node_modules/**/*"],
+  "exec": "node src/index.js"
+}
+EOL
+
+# Update package.json for server with Jest and updated nodemon configuration
+cat > server/package.json << EOL
+{
+  "name": "${APP_NAME}-server",
+  "version": "1.0.0",
+  "description": "Backend server for ${APP_NAME}",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon --config nodemon.json",
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "express": "^4.18.2",
+EOL
+
+# Add DB-specific dependencies
+if [ "$DB_TYPE" = "postgres" ]; then
+  cat >> server/package.json << EOL
+    "pg": "^8.10.0",
+    "pg-hstore": "^2.3.4",
+    "sequelize": "^6.31.0"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0",
+    "nodemon": "^2.0.22",
+    "supertest": "^6.3.3"
+  }
+}
+EOL
+else
+  cat >> server/package.json << EOL
+    "mongoose": "^7.0.3"
+  },
+  "devDependencies": {
+    "jest": "^29.5.0", 
+    "nodemon": "^2.0.22",
+    "supertest": "^6.3.3"
+  }
+}
+EOL
+fi
+
+# Create Jest config file for ES modules
+cat > server/test/jest.config.js << EOL
+export default {
+  transform: {},
+  extensionsToTreatAsEsm: ['.js'],
+  testEnvironment: 'node',
+  verbose: true,
+  collectCoverage: true,
+  coverageDirectory: 'coverage',
+  testMatch: ['**/test/**/*.test.js'],
+  moduleNameMapper: {
+    '^(\\.{1,2}/.*)\\.js$': '$1'
+  }
+};
+EOL
+
+# Create example unit test for a model
+cat > server/test/unit/example.model.test.js << EOL
+import { describe, it, expect } from '@jest/globals';
+
+// Import the model to test
+${DB_TYPE === "postgres" ? "import Example from '../../src/models/example.model.js';" : "import Example from '../../src/models/example.model.js';"}
+
+describe('Example Model', () => {
+  it('should be defined', () => {
+    expect(Example).toBeDefined();
+  });
+  
+  // Add more tests specific to your model here
+});
+EOL
+
+# Create example integration test for a route
+cat > server/test/integration/routes.test.js << EOL
+import { describe, it, expect, beforeAll, afterAll } from '@jest/globals';
+import request from 'supertest';
+import app from '../../src/app.js';
+
+let server;
+
+describe('API Routes', () => {
+  beforeAll(() => {
+    // Setup test server
+    const PORT = 8999;
+    server = app.listen(PORT);
+  });
+
+  afterAll((done) => {
+    // Close server after tests
+    server.close(done);
+  });
+
+  describe('GET /', () => {
+    it('should return a hello world message', async () => {
+      const response = await request(app).get('/');
+      expect(response.status).toBe(200);
+      expect(response.text).toContain('Hello World');
+    });
+  });
+
+  describe('GET /api', () => {
+    it('should return welcome message', async () => {
+      const response = await request(app).get('/api');
+      expect(response.status).toBe(200);
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toBe('Welcome to the API');
+    });
+  });
+
+  describe('Non-existent route', () => {
+    it('should return 404 for non-existent routes', async () => {
+      const response = await request(app).get('/non-existent-route');
+      expect(response.status).toBe(404);
+      expect(response.body).toHaveProperty('message');
+      expect(response.body.message).toBe('Route not found');
+    });
+  });
+});
+EOL
+
+# Update the Dockerfile to include the test directory
+cat > server/Dockerfile << EOL
+FROM node:18-alpine
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY nodemon.json ./
+COPY jest.config.js ./
+
+RUN npm install
+
+COPY . .
+
+EXPOSE \${SERVER_PORT}
+
+CMD ["npm", "run", "dev"]
+EOL
+
 
 # Create a template Dockerfile for client (will be moved to client directory after Vite setup)
 cat > client_Dockerfile_template << EOL
@@ -709,7 +883,7 @@ echo "Your app '$APP_NAME' has been created with the following structure:"
 echo
 echo "- $APP_NAME/"
 echo "  |- client/               # Frontend created with Vite"
-echo "  |- server/               # Node.js backend (Express)"
+echo "  |- server/               # Node.js backend (Express) with ES6 modules"
 echo "  |- scripts/              # Utility scripts"
 echo "  |   |- start.sh          # Start the application"
 echo "  |   |- stop.sh           # Stop the application (with DB cleanup option)"
